@@ -1,0 +1,1 @@
+A especificação completa do projeto está em `docs/SPEC.md`. Leia antes de trabalhar.
