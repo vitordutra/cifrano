@@ -37,3 +37,9 @@ Três pontos diferentes do sistema chamam API de modelo de linguagem: categoriza
 A seção 2 diz "Sem Lombok — use records e classes normais", sem distinguir onde cada um se aplica. **Entidade JPA nunca é `record`**: Hibernate precisa de um construtor sem argumentos e de conseguir alterar os campos por reflection para *dirty checking* — um `record` é imutável por definição e não tem construtor vazio.
 
 **Decisão confirmada: `record` para value objects de domínio e DTOs (`Money`, requests/responses, o payload do snapshot); classes normais e mutáveis só em `adapter/out`, para as entidades `@Entity`.** É exatamente a separação que a arquitetura hexagonal da seção 3 já impõe — só ficou escrito para não virar suposição implícita no meio do código, quando a Fase 1 começar a escrever entidades.
+
+## 6. Spring Boot 3.5.x, fixado na seção 2 do SPEC, chegou ao fim de vida open-source antes da Fase 0 começar
+
+A seção 2 fixa "Spring Boot 3.5.x — não substitua". Na prática, a linha 3.5 encerrou o suporte open-source em 30/06/2026 (a última patch OSS foi 3.5.16) — mais de um mês antes de este projeto escrever a primeira linha de código. Sem mais patch de segurança gratuito no Maven Central, começar ali seria nascer numa base já obsoleta, num sistema que vai guardar extrato bancário inteiro e, na Fase 7, rodar numa VPS exposta à internet.
+
+**Decisão: Spring Boot 4.1.x.** Última estável (GA 10/06/2026), Spring Framework 7, mínimo Java 17 (compatível com o Java 21 já fixado). `SPEC.md` seção 2 atualizado. Duas mudanças estruturais dessa troca já foram verificadas e resolvidas no `pom.xml` da Fase 0 (commit `9f86dbe`): o Flyway não é mais auto-configurado só com `flyway-core` (precisa do `spring-boot-starter-flyway`), e o Testcontainers 2.0 renomeou seus artefatos com prefixo `testcontainers-`. Versões confirmadas rodando `mvn dependency:tree` de verdade, não supostas pela documentação.

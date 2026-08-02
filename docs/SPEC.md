@@ -62,7 +62,7 @@ Minhas contas: **Mercado Pago** (principal), **Banco do Brasil**, **Nubank** (ca
 Anotei o que cada peça faz porque várias delas eu ainda não conheço. Se alguma anotação minha estiver errada ou incompleta, me corrija na primeira vez que a ferramenta aparecer no código.
 
 **Backend**
-- **Java 21** + **Spring Boot 3.5.x** — linguagem e framework.
+- **Java 21** + **Spring Boot 4.1.x** — linguagem e framework. (Originalmente fixado em 3.5.x; trocado antes da Fase 0 porque a linha 3.5 chegou ao fim de vida open-source em 30/06/2026, sem mais patch de segurança gratuito — ver `docs/discordancias.md`.)
 - **Maven** (não use Gradle) — gerenciador de dependências e build. É o `pom.xml`.
 - **PostgreSQL 16** — o banco de dados.
 - **Flyway** — versionamento de schema do banco. Em vez de alterar tabelas na mão, cada mudança vira um arquivo SQL numerado (`V1__create_transactions.sql`, `V2__add_installments.sql`) que roda uma vez e fica registrado numa tabela de controle. Isso torna o banco reproduzível: outra máquina, ou a VPS, chega ao mesmo estado rodando as mesmas migrations na mesma ordem. **Regra que decorre disso: nunca altere uma migration já aplicada — crie uma nova.**
