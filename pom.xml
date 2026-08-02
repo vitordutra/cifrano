@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        parent: herda de spring-boot-starter-parent, que por sua vez herda de
+        spring-boot-dependencies. Isso é o que resolve, por baixo, três coisas
+        que este pom.xml NÃO precisa declarar:
+
+          1. Versão de cada dependência do ecossistema Spring (web, data-jpa,
+             actuator...) e de bibliotecas que o Spring testou junto (Jackson,
+             Tomcat, Hibernate). Por isso as dependências abaixo não têm
+             <version> — a versão vem do "dependency management" herdado.
+             Sem o parent, cada <dependency> precisaria de versão explícita, e
+             seria sua responsabilidade garantir que todas são compatíveis
+             entre si (é exatamente esse trabalho de compatibilidade que o
+             time do Spring Boot já fez e testou).
+          2. Configuração de plugins de build — em especial o
+             spring-boot-maven-plugin, que empacota o jar como "fat jar"
+             executável (todas as dependências dentro de um .jar só, rodável
+             com `java -jar`).
+          3. Encoding do projeto (UTF-8), versão do compilador Java, e
+             propriedades de teste (como o plugin do Surefire saber achar
+             testes JUnit 5).
+
+        Alternativa sem parent: usar spring-boot-dependencies como um BOM
+        importado em <dependencyManagement>, mantendo outro parent (ex: o pom
+        da sua empresa). Não é o caso aqui — projeto novo, sem parent próprio
+        — então o parent direto é mais simples e é o caminho recomendado pela
+        própria documentação do Spring Boot para este cenário.
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+        <relativePath/>
+    </parent>
+
+    <!--
+        groupId/artifactId/version identificam este projeto no repositório
+        Maven (local ou remoto) — é o "nome completo" que outro projeto
+        usaria para depender dele. packaging=jar é o padrão para uma
+        aplicação Spring Boot standalone (não precisa declarar).
+    -->
+    <groupId>com.cifrano</groupId>
+    <artifactId>cifrano-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>cifrano-backend</name>
+    <description>Sistema de finanças pessoais — backend</description>
+
+    <!--
+        properties: valores reutilizados no resto do arquivo.
+        java.version é lida pelo spring-boot-starter-parent para configurar
+        o compilador Java — sem ela, o parent usa o padrão dele (Java 17 no
+        Spring Boot 4.1), e o projeto exige Java 21 (SPEC seção 2).
+    -->
+    <properties>
+        <java.version>21</java.version>
+    </properties>
+
+    <!--
+        dependencies: o que a aplicação usa. Cada uma comentada com o que
+        faz e o que aconteceria sem ela (CLAUDE.md / SPEC seção 14).
+    -->
+    <dependencies>
+        <!-- Controllers REST, servidor web embutido (Tomcat), serialização JSON.
+             Sem ela: não existe endpoint HTTP nenhum, incluindo o health check
+             que é o entregável desta fase. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA: mapeia classe Java <-> tabela, gera repositórios
+             a partir de interface. Sem ela: cada query seria JDBC manual. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Endpoints de operação (/actuator/health, /actuator/info...).
+             É o que responde o "health check" do entregável da Fase 0. Sem
+             ela: não existe endpoint de saúde pronto, seria preciso escrever
+             um controller só para isso. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Bean Validation (@NotNull, @Size...) nos DTOs de request. Sem
+             ela: validação de entrada vira `if` manual espalhado pelos
+             controllers. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Driver JDBC do Postgres — é o que sabe falar o protocolo de rede
+             do Postgres. Sem ele, nada no classpath consegue abrir conexão
+             com o banco, independente de JPA/Flyway. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- No Spring Boot 4, ter flyway-core no classpath não basta mais
+             para o Flyway rodar sozinho na subida — é preciso o starter
+             dedicado, que registra a auto-configuração. Sem ele: as
+             migrations em db/migration existem no jar mas nunca são
+             executadas. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
+        </dependency>
+        <!-- Suporte específico do Flyway ao Postgres (tipos, sintaxe de
+             DDL). Sem ele, o Flyway tenta rodar migration Postgres com um
+             dialeto genérico e pode interpretar SQL específico errado. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
+        <!-- Gera a documentação OpenAPI/Swagger a partir dos controllers.
+             Versão explícita porque este artefato não é gerenciado pelo BOM
+             do Spring Boot (é de terceiros) — sem <version> aqui, o Maven
+             não saberia qual baixar. -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.0.3</version>
+        </dependency>
+
+        <!-- JUnit 5 + AssertJ + Mockito + spring-test, tudo de uma vez.
+             Sem ela: cada peça de teste seria uma dependência separada para
+             descobrir e alinhar a versão manualmente. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Integração oficial do Spring Boot com Testcontainers (ex:
+             @ServiceConnection, que liga um container a um DataSource de
+             teste sem propriedade manual). Sem ela: cada teste configuraria
+             a conexão com o container na mão. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers 2.0 renomeou os módulos com o prefixo
+             "testcontainers-" (era "junit-jupiter" e "postgresql" no
+             Testcontainers 1.x). Integração com JUnit 5 (@Testcontainers,
+             @Container). -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Sobe um Postgres real em Docker durante o teste — é o que a
+             seção 12.1 do SPEC explica como "por que não H2": Postgres de
+             verdade tem ON CONFLICT, tipos NUMERIC e fuso horário reais. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testes de arquitetura: falha o build se `domain` importar Spring
+             ou JPA (SPEC seção 3). Versão explícita pelo mesmo motivo do
+             springdoc — não é gerenciado pelo BOM do Spring Boot. -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.4.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!--
+        build/plugins: só o spring-boot-maven-plugin, herdado do parent na
+        prática (ele já vem registrado por spring-boot-starter-parent) — é
+        declarado aqui de forma explícita para deixar visível que é ele o
+        responsável por `./mvnw spring-boot:run` e por empacotar o fat jar
+        no `./mvnw package`. Sem ele, `mvn package` geraria um .jar comum,
+        sem as dependências dentro nem uma classe main executável por
+        `java -jar`.
+    -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
