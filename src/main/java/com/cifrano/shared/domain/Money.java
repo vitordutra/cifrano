@@ -57,4 +57,39 @@ public record Money(BigDecimal amount, Currency currency) {
                             .formatted(currency, other.currency));
         }
     }
+
+    /**
+     * Sobrescreve o {@code equals} gerado pelo record. {@link BigDecimal#equals}
+     * compara escala além de valor — "10.00" e "10.0" são objetos diferentes
+     * para ele, apesar de representarem a mesma quantia (ver o teste que
+     * provou isso no commit anterior). {@link BigDecimal#compareTo} ignora
+     * escala e compara só o valor matemático, que é a igualdade que dinheiro
+     * precisa: R$ 10,00 é R$ 10,00, não importa quantas casas decimais o
+     * texto de origem trazia.
+     */
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Money other)) {
+            return false;
+        }
+        return amount.compareTo(other.amount) == 0 && currency.equals(other.currency);
+    }
+
+    /**
+     * {@code hashCode} precisa ser consistente com {@code equals}: dois
+     * objetos iguais têm que produzir o mesmo hash, senão Money quebra
+     * silenciosamente dentro de um {@code HashSet} ou como chave de
+     * {@code HashMap} — duas quantias iguais poderiam parar em posições
+     * diferentes da tabela hash e nunca serem encontradas uma pela outra.
+     * {@link BigDecimal#stripTrailingZeros()} normaliza "10.00" e "10.0"
+     * para a mesma representação mínima antes de calcular o hash, então
+     * valores iguais por {@code compareTo} sempre produzem o mesmo hash.
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(amount.stripTrailingZeros(), currency);
+    }
 }
