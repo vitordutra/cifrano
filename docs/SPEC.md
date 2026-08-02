@@ -13,9 +13,10 @@ Você vai construir um sistema fullstack de gestão de finanças pessoais para *
 - **Nada de `Co-authored-by` nem de qualquer assinatura ou menção a ferramenta de IA** nas mensagens de commit. Sem rodapé, sem emoji de robô, sem "generated with". A mensagem termina no conteúdo técnico.
 - **Não invente contratos de API externa.** Antes de integrar com Pluggy, use WebFetch em `https://docs.pluggy.ai` e confirme os endpoints, os nomes dos campos e o formato dos webhooks. Se a doc divergir deste documento, a doc vence — e me avise.
 - **Não superengenheire.** Sem microserviços, sem Kafka, sem service mesh, sem CQRS. Um monólito modular bem feito, um Postgres, um docker-compose.
-- **Escreva testes de verdade** (Testcontainers para repositório, unitários para regra de negócio). Não escreva testes que só verificam mock. **Nomes de teste descrevem a regra, não o método**: `pagamentoDeFaturaNaoContaComoDespesa()` em vez de `testDetect()`. Quero conseguir ler a lista de testes de uma classe e entender o que o sistema faz sem abrir o código. As regras completas e o que eu quero aprender sobre teste estão na **seção 12**.
+- **Escreva testes de verdade** (Testcontainers para repositório, unitários para regra de negócio). Não escreva testes que só verificam mock. **Nomes de teste descrevem a regra, não o método**: `creditCardBillPaymentIsNotAnExpense()` em vez de `testDetect()`. Quero conseguir ler a lista de testes de uma classe e entender o que o sistema faz sem abrir o código. As regras completas e o que eu quero aprender sobre teste estão na **seção 12**.
 - Crie e mantenha um `CLAUDE.md` na raiz com decisões, comandos e convenções, e um `docs/adr/` com as decisões arquiteturais relevantes.
 - Perguntas em vez de suposições silenciosas: se algo estiver ambíguo e mudar o modelo de dados, pergunte.
+- **Todo o código é em inglês** — nomes de pacote, classe, método, variável, enum, constante, nomes de teste, mensagens de exceção, chaves de configuração, rotas e campos de JSON. **O banco também**: DDL e DML — tabelas, colunas, constraints, índices, valores de enum persistidos e arquivos de migration. **A documentação (`docs/`) é em português**, porque é material de estudo; o glossário faz a ponte entre o termo em português e o identificador em inglês correspondente. Mensagens de commit em inglês. Nome de teste descreve a regra de negócio, não o método: `creditCardBillPaymentIsNotAnExpense()`, nunca `testDetect()`.
 
 ### Meu perfil — calibre suas explicações por isso
 
@@ -52,7 +53,7 @@ Duas fontes de dados:
 1. **Extratos bancários** (automático, via agregador de Open Finance)
 2. **Notas fiscais** (foto/QR code, que enriquece a transação bancária com os itens da compra)
 
-Minhas contas: **Mercado Pago** (principal), **Banco do Brasil**, **Nubank** (cartão de crédito), **Swile** (benefícios).
+Minhas contas: **Mercado Pago** (principal), **Banco do Brasil**, **Nubank** (cartão de crédito **e NuConta**), **Swile** (benefícios). Uma instituição pode ter mais de uma conta — é o caso do Nubank, com cartão de crédito e conta corrente (NuConta) na mesma instituição.
 
 ---
 
@@ -64,7 +65,7 @@ Anotei o que cada peça faz porque várias delas eu ainda não conheço. Se algu
 - **Java 21** + **Spring Boot 3.5.x** — linguagem e framework.
 - **Maven** (não use Gradle) — gerenciador de dependências e build. É o `pom.xml`.
 - **PostgreSQL 16** — o banco de dados.
-- **Flyway** — versionamento de schema do banco. Em vez de alterar tabelas na mão, cada mudança vira um arquivo SQL numerado (`V1__cria_transacoes.sql`, `V2__adiciona_parcelamento.sql`) que roda uma vez e fica registrado numa tabela de controle. Isso torna o banco reproduzível: outra máquina, ou a VPS, chega ao mesmo estado rodando as mesmas migrations na mesma ordem. **Regra que decorre disso: nunca altere uma migration já aplicada — crie uma nova.**
+- **Flyway** — versionamento de schema do banco. Em vez de alterar tabelas na mão, cada mudança vira um arquivo SQL numerado (`V1__create_transactions.sql`, `V2__add_installments.sql`) que roda uma vez e fica registrado numa tabela de controle. Isso torna o banco reproduzível: outra máquina, ou a VPS, chega ao mesmo estado rodando as mesmas migrations na mesma ordem. **Regra que decorre disso: nunca altere uma migration já aplicada — crie uma nova.**
 - **Spring Data JPA** — mapeia classes Java para tabelas e gera as queries.
 - **springdoc-openapi** — gera a documentação da API (OpenAPI/Swagger) a partir do código.
 - **Resilience4j** — retry e circuit breaker nas chamadas externas, para uma API fora do ar não derrubar o resto.
@@ -179,6 +180,21 @@ Eu sei escrever Java que funciona. O que eu não tenho é o **porquê** por trá
 - Toda transação tem `externalId` (o id do provedor) + `providerAccountId`, com **unique constraint** no par. Sincronização é sempre **upsert** por essa chave — *upsert* é a junção de *update* + *insert*: em vez de "insira esta transação", a operação é "se já existe uma transação com esta chave, atualize; se não existe, insira". No Postgres isso é `INSERT ... ON CONFLICT (external_id, provider_account_id) DO UPDATE`, resolvido em um comando só, sem a corrida de consultar antes e inserir depois. Rodar o sync duas vezes não pode duplicar nada.
 - Webhooks: guarde `eventId` recebido numa tabela `webhook_event` com unique constraint e ignore reprocessamento.
 
+### 4.4 Fungibilidade e fundos carimbados
+
+**Fungível** é o bem intercambiável por outro igual, sem perda — uma nota de R$ 50 vale qualquer outra nota de R$ 50. Dinheiro é o exemplo canônico. Mas fungibilidade tem duas dimensões: ser intercambiável **e** ser livre de destino. O saldo de vale-refeição/vale-alimentação falha na segunda: a **Lei 14.442/2022** e o **Decreto 12.712/2025** proíbem usar esse saldo para não-alimentício e proíbem o saque, tanto pelo empregador quanto pelo trabalhador. Não é política do emissor (Swile), é lei.
+
+Isso é **dinheiro carimbado**: fungível dentro do próprio pote, infungível entre potes. R$ 100 no Swile valem R$ 100 se e somente se virarem comida.
+
+Decisões que decorrem disso:
+
+- `Account.fundType`: `GENERAL` | `RESTRICTED`. Contas de benefício (Swile) são `RESTRICTED`.
+- **O saldo consolidado do dashboard nunca soma fundo `RESTRICTED` com `GENERAL`.** Mostre separado: "R$ 3.200 livres + R$ 480 em alimentação". Somar exibiria uma disponibilidade que eu não tenho.
+- O `InternalTransferDetector` (seção 5.1) nunca considera conta `RESTRICTED` como origem ou destino — não existe transferência de lá para lugar nenhum, porque o saque é proibido por lei.
+- Orçamento por categoria distingue gasto total de gasto pago com fundo `RESTRICTED`: se tenho R$ 480 de Swile e orcei R$ 900 em alimentação, o que sai do meu bolso é R$ 420.
+- A taxa de poupança do snapshot (seção 11.3) exclui saldo `RESTRICTED` — sobra de Swile no fim do mês não é poupança, é saldo preso.
+- O `FinancialProfile` (seção 11.2) marca cada fonte de renda também com um **grau de liberdade**, além do grau de garantia: salário é livre, Swile não é.
+
 ---
 
 ## 5. Os três problemas difíceis (é aqui que apps de finanças costumam errar)
@@ -188,7 +204,8 @@ Eu sei escrever Java que funciona. O que eu não tenho é o **porquê** por trá
 Se eu transfiro R$ 500 do Mercado Pago pro BB, isso aparece como uma saída de R$ 500 e uma entrada de R$ 500. Nenhuma das duas é despesa ou receita — é movimentação interna. Um app ingênuo contabiliza R$ 500 de gasto e destrói o relatório.
 
 Implemente um `InternalTransferDetector` que roda depois de cada sync:
-- procura pares de transações em **contas diferentes minhas**, com valores opostos e iguais em módulo, dentro de uma janela de ±3 dias
+- procura pares de transações em **contas diferentes minhas**, com valores opostos e iguais em módulo, dentro de uma janela de ±3 dias — "conta diferente", não "instituição diferente": o Nubank tem cartão de crédito e NuConta, e uma transferência entre as duas contas do mesmo Nubank é interna do mesmo jeito que uma entre Mercado Pago e BB
+- conta com `fundType = RESTRICTED` (seção 4.4) nunca entra como origem ou destino — não existe transferência de saída de um fundo carimbado, o saque é proibido por lei
 - se achar, cria um registro `InternalTransfer` ligando as duas e marca ambas com `excludedFromReports = true`
 - casos ambíguos (múltiplos candidatos) vão pra fila de revisão manual, não adivinhe
 
@@ -365,7 +382,7 @@ Dark mode como padrão (com toggle para claro). Quero algo que pareça uma ferra
 
 ### 10.2 Telas
 
-**Dashboard** — saldo consolidado, gasto do mês vs mês anterior, projeção de fim de mês, fatura atual do cartão, alertas de orçamento estourado.
+**Dashboard** — saldo consolidado com fundos livres e carimbados separados (seção 4.4: "R$ 3.200 livres + R$ 480 em alimentação", nunca somados), gasto do mês vs mês anterior, projeção de fim de mês, fatura atual do cartão, alertas de orçamento estourado.
 
 **Transações** — filtro por período/conta/categoria/valor, busca full-text, edição inline de categoria, ações em lote, indicador de nota fiscal vinculada.
 
@@ -463,7 +480,7 @@ Se você se pegar escrevendo um prompt que pede "calcule quanto ele gastaria se.
 
 O extrato sozinho não sabe quem eu sou. Crie uma entidade editável pela UI com:
 
-- **Fontes de renda**, cada uma com valor, recorrência e **grau de garantia**: salário CLT (fixo), freelas (variável, informo faixa), **ajuda de custo dos meus pais** (recorrente mas não garantida). Essa distinção não é decorativa — ela muda toda análise de risco.
+- **Fontes de renda**, cada uma com valor, recorrência, **grau de garantia** e **grau de liberdade**: salário CLT (fixo, livre), freelas (variável, informo faixa, livre), **ajuda de custo dos meus pais** (recorrente mas não garantida, livre), saldo de benefício tipo Swile (garantido pelo empregador, mas **carimbado** — só vira alimentação, ver seção 4.4). Sem o grau de liberdade, a IA sugere coisas impossíveis, tipo cortar o orçamento de alimentação para engordar a reserva de emergência com um dinheiro que juridicamente não pode sair do pote de comida.
 - **Compromissos fixos** que eu conheço e ainda não aparecem no extrato (aluguel que vai subir, curso que começa em março).
 - **Metas**: reserva de emergência, objetivo de compra, valor e prazo.
 - **Restrições e preferências**: o que eu não abro mão. Se eu marcar que café especial é inegociável, não quero ver sugestão de cortar café todo mês.
