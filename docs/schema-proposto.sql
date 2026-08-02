@@ -10,8 +10,16 @@
 -- e índice abaixo já está no nome definitivo que vai para o banco.
 --
 -- Money (docs/SPEC.md, seção 4.1): toda coluna monetária é NUMERIC(15,2).
--- Nunca double/float. Moeda não é persistida por linha (ver questions.md,
--- item 2) — o sistema é BRL-only e isso é constante da aplicação.
+-- Nunca double/float. Moeda É persistida (decisão em questions.md, item 2):
+-- toda tabela com valor monetário tem uma coluna `currency CHAR(3) NOT NULL
+-- DEFAULT 'BRL'` — uma por tabela, não uma por coluna de valor, já que uma
+-- tabela com mais de uma coluna monetária (ex: receipt_item, unit_price e
+-- total_price) usa a mesma moeda para as duas.
+--
+-- purchaseDate (questions.md, item 3): nulável em bank_transaction. O
+-- fallback para transactionDate não é feito em SQL — é um método de
+-- domínio, `BankTransaction.effectivePurchaseDate()`, que centraliza a
+-- regra num lugar só em vez de espalhar COALESCE pelas consultas.
 --
 -- Tempo (seção 4.2): toda coluna de instante é TIMESTAMPTZ, guardada em UTC.
 -- A conversão para America/Sao_Paulo acontece só na borda (apresentação).
@@ -69,6 +77,7 @@ CREATE TABLE account (
     -- o último saldo informado pelo provedor como cache de leitura rápida
     -- do dashboard — nunca a fonte da verdade.
     last_known_balance NUMERIC(15,2),
+    currency        CHAR(3) NOT NULL DEFAULT 'BRL',
     last_synced_at  TIMESTAMPTZ,
     active          BOOLEAN NOT NULL DEFAULT true,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -95,6 +104,7 @@ CREATE TABLE statement (
     -- Snapshot do total no momento do fechamento — não é "select sum(...)"
     -- ao vivo, é o valor que vira a referência para a detecção de pagamento.
     total_amount    NUMERIC(15,2),
+    currency        CHAR(3) NOT NULL DEFAULT 'BRL',
     status          statement_status NOT NULL DEFAULT 'OPEN',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -122,6 +132,7 @@ CREATE TABLE bank_transaction (
 
     -- Convenção de sinal (SPEC 4.1): despesa negativa, receita positiva.
     amount                  NUMERIC(15,2) NOT NULL,
+    currency                CHAR(3) NOT NULL DEFAULT 'BRL',
     description             VARCHAR(300) NOT NULL,
 
     -- transactionDate: quando o banco contabilizou. purchaseDate: quando a
@@ -129,6 +140,8 @@ CREATE TABLE bank_transaction (
     -- conciliação com nota fiscal (seção 8) precisa da segunda. purchaseDate
     -- é nulável — nem todo tipo de lançamento tem as duas datas (PIX, TED,
     -- débito automático costumam ter só uma) — ver questions.md, item 3.
+    -- O fallback para transactionDate é feito por BankTransaction.effectivePurchaseDate()
+    -- no domínio Java, nunca por COALESCE espalhado em query.
     transaction_date        TIMESTAMPTZ NOT NULL,
     purchase_date           TIMESTAMPTZ,
 
@@ -220,9 +233,27 @@ CREATE TABLE category (
     CONSTRAINT uk_category_code UNIQUE (code)
 );
 
--- Trigger de profundidade fica para a migration real (checar parent_id do
--- pai é NULL exige consultar outra linha, o que CHECK simples não faz).
--- Documentado aqui como decisão de schema: profundidade máxima 2.
+-- Profundidade máxima 2: uma categoria com parent_id preenchido não pode
+-- ser pai de outra. Um CHECK comum NÃO resolve isso — no Postgres, CHECK só
+-- enxerga a linha sendo inserida ou atualizada, e não pode consultar se o
+-- parent_id referenciado já tem um parent_id próprio. A validação correta
+-- é um TRIGGER (BEFORE INSERT/UPDATE), que consulta a linha do pai antes de
+-- aceitar a gravação. Esboço do que a migration real vai conter:
+--
+--   CREATE FUNCTION check_category_depth() RETURNS TRIGGER AS $$
+--   BEGIN
+--       IF NEW.parent_id IS NOT NULL AND EXISTS (
+--           SELECT 1 FROM category WHERE id = NEW.parent_id AND parent_id IS NOT NULL
+--       ) THEN
+--           RAISE EXCEPTION 'category % already has a parent, cannot become a parent itself', NEW.parent_id;
+--       END IF;
+--       RETURN NEW;
+--   END;
+--   $$ LANGUAGE plpgsql;
+--
+--   CREATE TRIGGER trg_category_max_depth
+--       BEFORE INSERT OR UPDATE ON category
+--       FOR EACH ROW EXECUTE FUNCTION check_category_depth();
 
 CREATE INDEX ix_category_parent ON category(parent_id);
 
@@ -278,6 +309,7 @@ CREATE TABLE receipt (
     merchant_cnpj        VARCHAR(14),
     purchase_date        TIMESTAMPTZ NOT NULL,
     total_amount         NUMERIC(15,2) NOT NULL,
+    currency             CHAR(3) NOT NULL DEFAULT 'BRL',
     payment_method       VARCHAR(60),
     -- Caminho da imagem original no filesystem, para auditoria (seção 7.2).
     image_path           VARCHAR(500),
@@ -300,7 +332,8 @@ CREATE TABLE receipt_item (
     description         VARCHAR(300) NOT NULL,
     quantity             NUMERIC(12,3) NOT NULL,
     unit_price           NUMERIC(15,2) NOT NULL,
-    total_price          NUMERIC(15,2) NOT NULL
+    total_price          NUMERIC(15,2) NOT NULL,
+    currency             CHAR(3) NOT NULL DEFAULT 'BRL'
 );
 
 CREATE INDEX ix_receipt_item_receipt ON receipt_item(receipt_id);
@@ -387,6 +420,7 @@ CREATE TABLE budget (
     -- Mês de referência como primeiro dia do mês, para orçamento mês a mês.
     reference_month               DATE NOT NULL,
     planned_amount                NUMERIC(15,2) NOT NULL,
+    currency                      CHAR(3) NOT NULL DEFAULT 'BRL',
     created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
     CONSTRAINT uk_budget_category_month UNIQUE (category_id, reference_month)
@@ -419,6 +453,7 @@ CREATE TABLE income_source (
     is_guaranteed             BOOLEAN NOT NULL,
     fund_type                 fund_type NOT NULL DEFAULT 'GENERAL',
     typical_amount             NUMERIC(15,2),
+    currency                   CHAR(3) NOT NULL DEFAULT 'BRL',
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -429,6 +464,7 @@ CREATE TABLE fixed_commitment (
     financial_profile_id     UUID NOT NULL REFERENCES financial_profile(id),
     description               VARCHAR(200) NOT NULL,
     expected_amount            NUMERIC(15,2) NOT NULL,
+    currency                   CHAR(3) NOT NULL DEFAULT 'BRL',
     starts_on                  DATE,
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -438,6 +474,7 @@ CREATE TABLE financial_goal (
     financial_profile_id     UUID NOT NULL REFERENCES financial_profile(id),
     description               VARCHAR(200) NOT NULL,
     target_amount              NUMERIC(15,2) NOT NULL,
+    currency                   CHAR(3) NOT NULL DEFAULT 'BRL',
     target_date                DATE,
     created_at                 TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -494,9 +531,10 @@ CREATE INDEX ix_sync_log_account ON sync_log(account_id);
 -- =============================================================================
 -- O que vira Flyway V1 (Fase 0) — só a fundação
 -- =============================================================================
--- institution, account, category (sem categorization_rule/llm cache ainda),
--- bank_transaction — o mínimo para cadastro manual de transação ponta a
--- ponta (entregável da Fase 1). Tudo o resto entra na migration da fase
--- que o usa: statement e internal_transfer na Fase 2, categorization_rule
--- e llm_categorization_cache na Fase 3, seção D e E inteiras na Fase 4,
+-- institution, account, category (com o trigger de profundidade, sem
+-- categorization_rule/llm cache ainda), bank_transaction — o mínimo para
+-- cadastro manual de transação ponta a ponta (entregável da Fase 1). Tudo
+-- o resto entra na migration da fase que o usa: statement e
+-- internal_transfer na Fase 2, categorization_rule e
+-- llm_categorization_cache na Fase 3, seção D e E inteiras na Fase 4,
 -- budget na Fase 5, seção G na Fase 6, webhook_event/sync_log na Fase 2.
