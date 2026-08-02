@@ -213,7 +213,7 @@ Implemente um `InternalTransferDetector` que roda depois de cada sync:
 
 Os gastos do cartão Nubank já entram individualmente como transações do cartão. Quando eu pago a fatura pela conta do Mercado Pago, isso **não é um novo gasto** — é a liquidação dos gastos que já foram contabilizados.
 
-Trate o pagamento de fatura como um caso especial de transferência interna (conta corrente → conta de crédito). Detecte por: conta destino do tipo `CREDIT_CARD`, valor igual ao total da fatura fechada, descrição contendo padrões de pagamento. Marque `excludedFromReports = true`.
+Trate o pagamento de fatura como um caso especial de transferência interna (conta corrente → conta de crédito). Detecte por: conta destino do tipo `CREDIT_CARD` e valor igual ao total da fatura fechada (tabela `statement`, com `closing_date`/`due_date`/`total_amount`). Descrição contendo padrão de pagamento **não** entra na lógica de decisão — descritor de pagamento varia por banco e muda sem aviso, é o tipo de heurística frágil que a seção 8 evita ao preferir *score* a regra binária. Use o padrão de texto só como reforço explicativo na UI ("por que marcamos isso como pagamento de fatura"). Marque `excludedFromReports = true`.
 
 ### 5.3 Compras parceladas
 

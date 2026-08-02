@@ -298,6 +298,13 @@ CREATE TYPE receipt_status AS ENUM ('CONFIRMED', 'PENDING_MANUAL', 'NEEDS_REVIEW
 -- receipt: uma nota fiscal ou comprovante, vinda de QR de NFC-e (seção 7.1)
 -- ou de extração por visão (seção 7.2). `access_key` só existe quando o
 -- caminho é NFC-e; os outros campos existem sempre.
+--
+-- Cache permanente contra a fragilidade do scraping da SEFAZ
+-- (discordancias.md, item 2): esta própria tabela já é o cache. Uma nota
+-- com `access_key` já persistida nunca deve disparar novo parse do portal
+-- — a regra de aplicação é sempre checar `receipt` por `access_key` antes
+-- de chamar qualquer `NfceProvider`. A unique constraint abaixo garante
+-- que o banco nunca aceita duas linhas para a mesma chave de acesso.
 CREATE TABLE receipt (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source              receipt_source NOT NULL,
@@ -343,6 +350,13 @@ CREATE INDEX ix_receipt_item_category ON receipt_item(category_id);
 -- — uma nota pode ser paga com dois cartões, uma transação pode cobrir
 -- duas notas. `confidence` guarda o score do ReconciliationService no
 -- momento do vínculo, mesmo que o vínculo tenha sido confirmado depois.
+--
+-- Regra de auto-vínculo (discordancias.md, item 4): "score ≥ 0.85 e o
+-- segundo melhor candidato < 0.60" — quando existe só um candidato, a
+-- ausência de segundo candidato conta como score 0 na comparação, então
+-- um candidato único com score ≥ 0.85 vincula automaticamente sem passar
+-- por `receipt_reconciliation_candidate`. É regra de aplicação
+-- (ReconciliationService), não constraint de banco.
 CREATE TABLE receipt_transaction_link (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     receipt_id              UUID NOT NULL REFERENCES receipt(id),
@@ -496,6 +510,36 @@ CREATE INDEX ix_advice_snapshot_generated_at ON advice_snapshot(generated_at);
 
 
 -- =============================================================================
+-- SEÇÃO G.1 — Controle de custo de chamadas a LLM (discordancias.md, item 3)
+-- =============================================================================
+-- Três pontos do sistema chamam API de modelo de linguagem: categorização
+-- de último recurso (Fase 3), extração por visão (Fase 4), e o assistente
+-- financeiro inteiro (Fase 6). Sem log nem limite, um bug de retry ou uma
+-- tela que dispara a mesma extração duas vezes vira gasto de API sem
+-- ninguém perceber — irônico num sistema que existe para controlar gasto.
+CREATE TYPE llm_call_purpose AS ENUM ('CATEGORIZATION', 'VISION_EXTRACTION', 'FINANCIAL_ADVICE');
+
+CREATE TABLE llm_call_log (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    purpose             llm_call_purpose NOT NULL,
+    provider            VARCHAR(60) NOT NULL,
+    model               VARCHAR(120) NOT NULL,
+    input_tokens        INTEGER NOT NULL,
+    output_tokens       INTEGER NOT NULL,
+    estimated_cost      NUMERIC(10,4) NOT NULL,
+    currency            CHAR(3) NOT NULL DEFAULT 'USD',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX ix_llm_call_log_created_at ON llm_call_log(created_at);
+
+-- O limite mensal em si (valor configurável, e o que "degradar
+-- graciosamente" significa por purpose) é regra de aplicação sobre a soma
+-- de estimated_cost do mês corrente, não uma tabela nova — não há estado
+-- adicional para persistir além do próprio log.
+
+
+-- =============================================================================
 -- SEÇÃO H — Sincronização e operação (Fase 2/7)
 -- =============================================================================
 
@@ -537,4 +581,7 @@ CREATE INDEX ix_sync_log_account ON sync_log(account_id);
 -- o resto entra na migration da fase que o usa: statement e
 -- internal_transfer na Fase 2, categorization_rule e
 -- llm_categorization_cache na Fase 3, seção D e E inteiras na Fase 4,
--- budget na Fase 5, seção G na Fase 6, webhook_event/sync_log na Fase 2.
+-- budget na Fase 5, seção G e G.1 na Fase 6 (llm_call_log nasce junto do
+-- primeiro chamador de LLM, então pode adiantar para a Fase 3 se a
+-- categorização por IA vier antes do assistente), webhook_event/sync_log
+-- na Fase 2.
