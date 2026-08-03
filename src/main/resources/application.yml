@@ -1,3 +1,16 @@
 spring:
   application:
     name: cifrano-backend
+  jpa:
+    properties:
+      hibernate:
+        # Força o Hibernate a converter para UTC ao gravar e ao ler do banco,
+        # independente do fuso horário padrão da JVM (SPEC 4.2). Para campos
+        # `Instant` — que é o único tipo de data/hora que o domínio deste
+        # projeto usa — isso já é automático, porque Instant não tem fuso
+        # embutido para ambiguar. Esta propriedade existe como uma segunda
+        # trava: se algum dia um campo `LocalDateTime` entrar sem querer em
+        # alguma entidade, ele ainda é interpretado como UTC, e não como o
+        # fuso da máquina que estiver rodando o processo.
+        jdbc:
+          time_zone: UTC
