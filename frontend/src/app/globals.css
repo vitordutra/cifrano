@@ -1,0 +1,100 @@
+/*
+  Tailwind é uma biblioteca de classes utilitárias: em vez de escrever CSS
+  num arquivo separado (`.botao { padding: 8px; background: blue; }`) e
+  depois aplicar essa classe no HTML, você aplica várias classes pequenas
+  direto na marcação, cada uma fazendo uma coisa só — `p-2` é
+  `padding: 0.5rem`, `bg-blue-500` é uma cor de fundo específica,
+  `flex` é `display: flex`. É por isso que você vai ver `className="flex
+  flex-col items-center gap-4"` dentro dos componentes React em vez de um
+  nome de classe genérico como `className="card"` apontando para um CSS à
+  parte. A vantagem: você lê o estilo de um elemento olhando só para ele,
+  sem pular para outro arquivo. A desvantagem: a marcação fica mais
+  verbosa — é uma troca deliberada, não um acidente.
+
+  Este arquivo é o único lugar do projeto com CSS "de verdade" (fora das
+  classes utilitárias). `@import "tailwindcss"` traz as classes utilitárias
+  prontas da própria biblioteca — sem essa linha, `className="flex"` não
+  significaria nada, porque não existiria CSS nenhum gerando aquela classe.
+*/
+@import "tailwindcss";
+
+/*
+  Variáveis CSS (a sintaxe `--nome: valor`) são um recurso nativo do CSS,
+  não do Tailwind — existem desde antes do Tailwind existir. `:root` é o
+  elemento mais alto da página (o `<html>`), então uma variável declarada
+  aqui fica visível em qualquer lugar do CSS, com `var(--nome)`.
+
+  Paleta da SPEC seção 10.1: nunca preto puro. Fundo base #0A0A0C,
+  superfícies elevadas #141417 (para cards e painéis que precisam parecer
+  "acima" do fundo, sem usar borda grossa para isso), bordas
+  rgba(255,255,255,0.08) — um branco quase transparente, sutil o bastante
+  para separar áreas sem chamar atenção.
+*/
+:root {
+  --background: #0a0a0c;
+  --surface: #141417;
+  --border: rgba(255, 255, 255, 0.08);
+  --foreground: #ededed;
+  --muted: #9a9aa0;
+}
+
+/*
+  A classe `.dark` aqui não é uma classe do Tailwind — é uma classe comum
+  de CSS que o `next-themes` (veja `components/theme-provider.tsx`) adiciona
+  ou remove do `<html>` via JavaScript, no navegador, quando o tema muda.
+  Quando `.dark` está presente no `<html>`, todo elemento dentro dele "vê"
+  estas variáveis em vez das de `:root`. É assim que o Tailwind sabe
+  aplicar `dark:bg-blue-500` de forma diferente de `bg-blue-500` — por
+  baixo, ele só decide qual regra CSS ativar de acordo com a presença
+  dessa classe no ancestral.
+
+  Dark é o único tema definido nesta fase — a paleta clara e o botão de
+  alternar tema nascem na Fase 5, junto da primeira tela de verdade. Até
+  lá, `:root` e `.dark` têm os mesmos valores de propósito: o HTML já
+  nasce com a variável certa antes mesmo do JavaScript do next-themes
+  rodar, então não existe um instante em que a página aparece clara e
+  "pisca" para escura.
+*/
+.dark {
+  --background: #0a0a0c;
+  --surface: #141417;
+  --border: rgba(255, 255, 255, 0.08);
+  --foreground: #ededed;
+  --muted: #9a9aa0;
+}
+
+/*
+  `@theme inline` é sintaxe do Tailwind v4 (versão anterior usava um
+  arquivo `tailwind.config.js` separado; a v4 move essa configuração para
+  dentro do próprio CSS). Este bloco registra as variáveis acima como
+  "tokens de design" do Tailwind — depois disso, `bg-background`,
+  `text-foreground`, `border-border` viram classes utilitárias de verdade,
+  geradas a partir de `--color-background`, `--color-foreground`,
+  `--color-border`. Sem este bloco, essas variáveis existiriam só como CSS
+  cru, sem uma classe Tailwind correspondente para usar nos componentes.
+  `--font-sans`/`--font-mono` fazem o mesmo para as fontes carregadas em
+  `layout.tsx` — depois disso, `font-sans` e `font-mono` (classes do
+  Tailwind) apontam para a fonte Geist em vez da fonte padrão do navegador.
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/*
+  Este é CSS comum, fora do sistema de classes utilitárias — o único
+  elemento estilizado "à moda antiga" no projeto inteiro, porque `<body>`
+  é a base de tudo e faz sentido garantir a cor de fundo e a fonte padrão
+  no nível mais alto, em vez de repetir `className="bg-background
+  text-foreground font-sans"` em toda página.
+*/
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}

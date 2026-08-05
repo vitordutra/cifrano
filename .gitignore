@@ -12,3 +12,6 @@ Thumbs.db
 
 # Segredos (SPEC seção 13 — .env nunca commitado)
 .env
+
+# Artefatos de ferramenta (screenshots do Playwright MCP)
+.playwright-mcp/

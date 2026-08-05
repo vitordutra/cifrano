@@ -75,7 +75,9 @@ Anotei o que cada peça faz porque várias delas eu ainda não conheço. Se algu
 - Sem Lombok — use records e classes normais.
 
 **Frontend**
-- **Next.js 15 (App Router)** — framework React com renderização no servidor.
+- **Next.js 16 (App Router)** — framework React com renderização no servidor. (Originalmente fixado em 15; trocado antes do scaffold porque o 15 só recebe suporte até 21/10/2026, e a Fase 5 — onde o frontend passa a ser usado de verdade — só começa depois das fases 1-4. Diferente do Spring Boot 3.5, o 15 ainda não estava morto, mas nasceria perto do fim de vida — ver `docs/discordancias.md`.)
+  - **Turbopack é o bundler padrão** do Next.js 16 (substituiu o Webpack como default) — não precisa configurar nada para isso, já vem assim no scaffold.
+  - **React Compiler não é ligado.** Ele existe (opt-in via `next.config.ts`) e memoiza componentes automaticamente, evitando re-renderizações desnecessárias sem precisar de `useMemo`/`useCallback` escritos à mão. Não ligar é deliberado: quero entender o modelo de re-renderização do React manualmente antes de deixar uma ferramenta automatizar isso — ligar cedo demais esconderia exatamente o problema que a Fase 5 quer que eu aprenda a enxergar.
 - **TypeScript strict** — JavaScript com tipos.
 - **Tailwind CSS v4** — estilização por classes utilitárias direto na marcação.
 - **shadcn/ui** — componentes prontos (botão, tabela, modal) que são copiados para o projeto em vez de instalados como dependência.
